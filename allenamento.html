@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Allenamento</title>
+<style>
+:root{--bg:#141c24;--sf:#1e2a35;--ln:#2e3d4b;--tx:#eef1f4;--mu:#9aa8b5;--ac:#f2b84b;--ok:#6fcf97;--rd:#e5736b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:560px;margin:0 auto;padding:12px 14px 90px}
+h1{font-size:1.3rem;margin:4px 0 12px}h2{font-size:1.05rem;margin:18px 0 8px}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--sf);border:1px solid var(--ln);border-radius:10px;padding:10px 14px;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+button.p{background:var(--ac);color:#141c24;border-color:var(--ac);font-weight:700}
+button.big{width:100%;padding:20px;font-size:1.25rem;margin:8px 0}
+input,select{min-height:42px;background:var(--bg);border:1px solid var(--ln);border-radius:8px;padding:8px;width:100%}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}
+.tabs button{flex:1}.tabs .on{border-color:var(--ac);color:var(--ac)}
+.es{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;margin-bottom:8px}
+.mu{color:var(--mu);font-size:.9rem}
+#tm{font-size:4.2rem;font-variant-numeric:tabular-nums;text-align:center;margin:6px 0 0;font-weight:700}
+#ts{text-align:center;color:var(--mu);margin-bottom:8px}
+.set{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 10px;border-top:1px solid var(--ln);padding:6px 0}
+.set .l{display:flex;align-items:center;gap:6px}.set .r{margin-left:auto}
+.mini{width:3.4rem;padding:4px 6px;text-align:center}.mini.w{width:4.4rem}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--sf);border-top:1px solid var(--ln);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;border-radius:0;background:none;padding:14px}nav .on{color:var(--ac)}
+.row.end{align-items:flex-end}.row.end>button{flex:0 0 auto;min-height:42px}
+.row.end>button.sq{flex:0 0 44px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+button:disabled,input:disabled,select:disabled{opacity:.4;cursor:not-allowed}
+.off{border-style:dashed}.off label{opacity:.5}.sch{border-left:4px solid var(--ac);margin-top:18px}
+.live{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(111,207,151,.28);vertical-align:middle;margin-right:8px}
+.es.on,.live-b{border-color:var(--ok)}
+.es .live{margin:0 6px 0 0}
+.card{background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:12px;margin-bottom:10px}
+.card label{display:block;margin:6px 0 2px;color:var(--mu);font-size:.85rem}
+#mic{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;background:var(--bg);padding:6px 0}
+#mic button{flex:0 0 auto}#heard{flex:1;color:var(--mu);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+</head>
+<body>
+<main>
+<div id="mic"><button id="mb" class="p">Attiva voce</button><span id="heard">Voce spenta</span></div>
+<div id="app"></div>
+</main>
+<nav id="nav"></nav>
+<script>
+const K = 'allenamento-v1';
+const def = () => ({versione: 2, corrente: null, log: [], schede: [
+  {id: 'gambe', nome: 'Gambe', es: [
+    {id: 'squat', nome: 'Squat', tipo: 'classica', obiettivo: '3 × 10', alias: ['squat']},
+    {id: 'rdl', nome: 'RDL', tipo: 'classica', obiettivo: '3 × 10', alias: ['rdl', 'stacco rumeno']}]},
+  {id: 'push', nome: 'Push', es: [
+    {id: 'dips', nome: 'Dips', tipo: '10x10', obiettivo: '10 × 10', pausa: 120, alias: ['dips', 'parallele']},
+    {id: 'panca', nome: 'Flat bench press', tipo: 'classica', obiettivo: '3–4 × 10', alias: ['panca piana', 'panca', 'bench']},
+    {id: 'military', nome: 'Military press', tipo: '10x10', obiettivo: '10 × 10', pausa: 120, alias: ['military press', 'military', 'lento avanti']}]},
+  {id: 'pull', nome: 'Pull', es: [
+    {id: 'rematore', nome: 'Rematore con bilanciere', tipo: '10x10', obiettivo: '10 × 10', pausa: 120, alias: ['rematore', 'rematori']},
+    {id: 'trazioni', nome: 'Trazioni alla sbarra', tipo: '10x10', obiettivo: '10 × 10', pausa: 120, alias: ['trazioni', 'pull up', 'chin up']},
+    {id: 'pullover', nome: 'Pull-over con manubri', tipo: 'classica', obiettivo: '3–4 × 15', alias: ['pull over', 'pullover']}]}
+]});
+function migra(x) {
+  if (x.versione < 2) { /* v2: peso per serie e pausa registrata sulla serie precedente */
+    const f = sets => sets.forEach((s, i) => { s.pausaDopo = sets[i + 1] ? sets[i + 1].pausa : null; delete s.pausa; });
+    (x.log || []).forEach(l => { l.sets.forEach(s => s.peso = l.peso); f(l.sets); });
+    if (x.corrente) { x.corrente.sets.forEach(s => s.peso = x.corrente.peso); f(x.corrente.sets); }
+    x.versione = 2;
+  }
+  return x;
+}
+function load() { try { const x = JSON.parse(localStorage.getItem(K)); if (x && x.versione) return migra(x); } catch (e) {} return def(); }
+function save() { try { localStorage.setItem(K, JSON.stringify(D)); } catch (e) {} }
+let D = load(), view = 'home', sched = D.schede[0].id, hist = '';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const allEs = () => D.schede.flatMap(s => s.es);
+const CHU = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 15 12 9 18 15"/></svg>`;
+const CHD = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`;
+const bloccato = c => !!(c && (c.bloccato || c.sets.length));
+const attive = () => D.schede.filter(s => !s.arch).flatMap(s => s.es).filter(e => !e.arch);
+const getEs = id => allEs().find(e => e.id === id);
+const fmt = ms => { ms = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(ms / 60)).padStart(2, '0') + ':' + String(ms % 60).padStart(2, '0'); };
+const lastLog = id => D.log.filter(l => l.esId === id).slice(-1)[0];
+const stats = l => { const p = l.sets.map(s => s.pausaDopo).filter(x => x != null); return {avg: p.length ? p.reduce((a, b) => a + b, 0) / p.length : null, min: p.length ? Math.min(...p) : null}; };
+const pesi = l => { const p = l.sets.map(s => s.peso ?? l.peso); return p.every(x => x === p[0]) ? (p[0] || '–') : p.join('/'); };
+const defRip = e => { const m = /×\s*(\d+)/.exec(e.obiettivo || ''); return m ? +m[1] : 10; };
+
+/* ---- audio e schermo ---- */
+let ac = null;
+function sblocca() { try { if (!ac || ac.state === 'closed') ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state !== 'running') ac.resume(); } catch (e) {} }
+function beep() {
+  try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {}
+  sblocca(); if (!ac) return;
+  const go = () => { const o = ac.createOscillator(), g = ac.createGain(); o.connect(g); g.connect(ac.destination); o.frequency.value = 880; g.gain.value = .5; o.start(); o.stop(ac.currentTime + .2); };
+  if (ac.state === 'running') go(); else ac.resume().then(go).catch(() => {});
+}
+function provaSuono() { [0, 1, 2].forEach(i => setTimeout(beep, i * 1000)); }
+document.addEventListener('pointerdown', sblocca);
+document.addEventListener('click', sblocca);
+
+/* ---- logica serie ---- */
+function openEs(id) {
+  const c0 = D.corrente;
+  if (c0 && c0.esId !== id) {
+    if (bloccato(c0)) { heard('Prima termina «' + getEs(c0.esId).nome + '»'); return; }
+    D.corrente = null; /* aperto per errore, senza serie: si può cambiare */
+  }
+  if (!D.corrente) { const l = lastLog(id); D.corrente = {esId: id, peso: l ? l.peso : '', sets: [], inCorso: false, beep: false}; }
+  view = 'ses'; save(); render();
+}
+function startSet() {
+  const c = D.corrente; if (!c || c.inCorso) return;
+  const L = c.sets[c.sets.length - 1], n = Date.now();
+  if (L) L.pausaDopo = Math.round((n - L.fine) / 1000);
+  c.sets.push({inizio: n, fine: null, rip: null, peso: c.peso, pausaDopo: null});
+  c.inCorso = true; c.bip = 0; c.bloccato = true; save(); render();
+}
+function endSet(rip) {
+  const c = D.corrente; if (!c || !c.inCorso) return;
+  const L = c.sets[c.sets.length - 1], inp = $('#rip');
+  L.fine = Date.now(); L.rip = rip || (inp && +inp.value) || defRip(getEs(c.esId)); c.inCorso = false; save(); render();
+}
+function undo() {
+  const c = D.corrente; if (!c || !c.sets.length) return;
+  c.sets.pop(); c.inCorso = false;
+  const P = c.sets[c.sets.length - 1]; if (P) P.pausaDopo = null;
+  save(); render();
+}
+function eSet(i, k, v) { D.corrente.sets[i][k] = k === 'rip' ? +v : v; save(); }
+function setPeso(v) { const c = D.corrente; c.peso = v; if (c.inCorso) c.sets[c.sets.length - 1].peso = v; save(); render(); }
+function finish() {
+  const c = D.corrente; if (!c) return;
+  const sets = c.sets.filter(s => s.fine);
+  if (sets.length) D.log.push({id: 'l' + Date.now(), data: new Date().toISOString(), esId: c.esId, nome: getEs(c.esId).nome, peso: sets[sets.length - 1].peso, sets});
+  D.corrente = null; view = 'home'; save(); render();
+}
+
+/* ---- timer ---- */
+/* quando suona l'avviso: 10x10 = inizio serie precedente + intervallo (default 120 s); classica = fine serie + intervallo, solo se impostato */
+function scadenza(e, L) {
+  const p = e.tipo === '10x10' ? (e.pausa || 120) : (e.pausa || 0);
+  return p ? (e.tipo === '10x10' ? L.inizio : L.fine) + p * 1000 : null;
+}
+function tick() {
+  const c = D.corrente, m = $('#tm'), s = $('#ts'); if (!m || !c) return;
+  const L = c.sets[c.sets.length - 1], e = getEs(c.esId), n = Date.now();
+  if (c.inCorso) { m.textContent = fmt(n - L.inizio); s.textContent = 'Serie ' + c.sets.length + ' in corso'; }
+  else if (L) {
+    m.textContent = fmt(n - L.fine); let t = 'Pausa dopo la serie ' + c.sets.length;
+    const sc = scadenza(e, L);
+    if (sc) { const r = sc - n; t += r > 0 ? ' · prossima tra ' + fmt(r) : ' · è ora di ripartire'; }
+    s.textContent = t;
+  } else { m.textContent = '00:00'; s.textContent = 'Pronto: dì “inizio serie”'; }
+}
+function controllaPausa() { /* gira in ogni schermata. Tre bip, uno al secondo, a -3, -2 e -1 secondi dalla scadenza */
+  const c = D.corrente; if (!c || c.inCorso || !c.sets.length) return;
+  const e = getEs(c.esId), L = c.sets[c.sets.length - 1], due = scadenza(e, L); if (!due) return;
+  const r = (due - Date.now()) / 1000, k = r <= 1 ? 3 : r <= 2 ? 2 : r <= 3 ? 1 : 0, fatti = c.bip || 0;
+  if (k <= fatti) return;
+  c.bip = k; save();
+  if (r > -1) beep(); /* se la scadenza è già passata da un po' (serie più lunga dell'intervallo) niente suono */
+}
+setInterval(() => { controllaPausa(); tick(); }, 100);
+
+/* ---- viste ---- */
+function render() {
+  const nav = [['home', 'Allenamento'], ['storia', 'Storico'], ['modifica', 'Modifica']];
+  $('#nav').innerHTML = nav.map(([v, t]) => `<button data-v="${v}" class="${view === v || (v === 'home' && view === 'ses') ? 'on' : ''}">${t}</button>`).join('');
+  $('#nav').querySelectorAll('button').forEach(b => b.onclick = () => { view = b.dataset.v; render(); });
+  $('#app').innerHTML = ({home: vHome, ses: vSes, storia: vStoria, modifica: vModifica})[view]();
+  tick();
+}
+function vHome() {
+  const att = D.schede.filter(x => !x.arch);
+  if (!att.length) return '<h1>Allenamento</h1><p class="mu">Nessuna scheda attiva: creane o ripristinane una in Modifica.</p>';
+  const s = att.find(x => x.id === sched) || att[0];
+  const tabs = att.map(x => `<button class="${x.id === s.id ? 'on' : ''}" onclick="sched='${x.id}';render()">${esc(x.nome)}</button>`).join('');
+  const cur = D.corrente, lock = bloccato(cur);
+  const banner = lock ? `<div class="card live-b"><span class="live"></span><b>${esc(getEs(cur.esId).nome)}</b> in corso · ${cur.sets.filter(x => x.fine).length} serie fatte<br><span class="mu">Gli altri esercizi sono bloccati finché non lo termini.</span><div style="height:8px"></div><button class="p" style="width:100%" onclick="view='ses';render()">Torna all’esercizio</button></div>` : '';
+  const list = s.es.filter(e => !e.arch).map(e => {
+    const l = lastLog(e.id), st = l && stats(l), on = lock && cur.esId === e.id, off = lock && !on;
+    const info = l ? `Ultimo: ${l.peso || '–'} kg${st.avg != null ? ' · pausa media ' + fmt(st.avg * 1000) : ''}` : 'Nessun dato';
+    return `<button class="es ${on ? 'on' : ''}" onclick="openEs('${e.id}')" ${off ? 'disabled' : ''}><span><b>${esc(e.nome)}</b><br><span class="mu">${esc(e.obiettivo)} · ${info}</span></span><span>${on ? '<span class="live"></span>' : '›'}</span></button>`;
+  }).join('');
+  return `<h1>Allenamento</h1>${banner}<div class="row tabs" style="margin-bottom:12px">${tabs}</div>${list || '<p class="mu">Nessun esercizio in questa scheda.</p>'}`;
+}
+function vSes() {
+  const c = D.corrente; if (!c) { view = 'home'; return vHome(); }
+  const e = getEs(c.esId), tot = e.tipo === '10x10' ? ' / 10' : '';
+  const sets = c.sets.map((s, i) => `<div class="set"><span class="l"><b>Serie ${i + 1}</b>${s.fine ? `<input class="mini" type="number" inputmode="numeric" aria-label="Ripetizioni serie ${i + 1}" value="${s.rip ?? ''}" onchange="eSet(${i},'rip',this.value)"> rip` : '<span class="mu">in corso</span>'}<input class="mini w" type="number" step="0.5" inputmode="decimal" aria-label="Peso serie ${i + 1}" value="${esc(s.peso)}" onchange="eSet(${i},'peso',this.value)"> kg</span><span class="mu r">${s.fine ? 'durata ' + fmt(s.fine - s.inizio) : ''}${s.pausaDopo != null ? ' · pausa ' + fmt(s.pausaDopo * 1000) : ''}</span></div>`).join('');
+  return `<h1>${esc(e.nome)}</h1><p class="mu">${esc(e.obiettivo)} · serie fatte: ${c.sets.filter(s => s.fine).length}${tot}</p>
+  <div class="row"><div><label class="mu">Peso serie (kg)</label><input type="number" step="0.5" inputmode="decimal" value="${esc(c.peso)}" onchange="setPeso(this.value)"></div>
+  <div><label class="mu">Ripetizioni</label><input id="rip" type="number" inputmode="numeric" value="${defRip(e)}"></div></div>
+  <div id="tm"></div><div id="ts"></div>
+  ${c.inCorso ? '<button class="big p" onclick="endSet()">Serie finita</button>' : '<button class="big p" onclick="startSet()">Inizio serie</button>'}
+  <div class="row"><button onclick="undo()">Annulla ultima</button><button onclick="finish()">Termina esercizio</button></div>
+  <h2>Serie di oggi</h2>${sets || '<p class="mu">Ancora nessuna serie.</p>'}`;
+}
+function vStoria() {
+  const opts = allEs().map(e => `<option value="${e.id}" ${hist === e.id ? 'selected' : ''}>${esc(e.nome)}</option>`).join('');
+  const rows = D.log.filter(l => !hist || l.esId === hist).slice().reverse().slice(0, 40).map(l => {
+    const st = stats(l), d = new Date(l.data).toLocaleDateString('it-IT', {day: 'numeric', month: 'short'});
+    return `<div class="card"><b>${esc((getEs(l.esId) || l).nome)}</b> <span class="mu">${d}</span><br>${pesi(l)} kg · ${l.sets.length} serie · ${l.sets.map(s => s.rip).join('/')} rip<br><span class="mu">Pausa media ${st.avg != null ? fmt(st.avg * 1000) : '–'} · più corta ${st.min != null ? fmt(st.min * 1000) : '–'}</span></div>`;
+  }).join('');
+  return `<h1>Storico</h1><select onchange="hist=this.value;render()"><option value="">Tutti gli esercizi</option>${opts}</select><div style="height:10px"></div>${rows || '<p class="mu">Ancora nessun allenamento registrato.</p>'}`;
+}
+function cardEs(e, s, ie, na, att) {
+  const off = !!e.arch, d = off ? 'disabled' : '';
+  const opts = att.map(x => `<option value="${x.id}" ${x.id === s.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('');
+  return `<div class="card ${off ? 'off' : ''}">
+    <div class="row end"><div><label>Nome</label><input value="${esc(e.nome)}" onchange="ed('${e.id}','nome',this.value)" ${d}></div>
+    <button class="sq" aria-label="Sposta su" onclick="muovi('${e.id}',-1)" ${off || ie === 0 ? 'disabled' : ''}>${CHU}</button>
+    <button class="sq" aria-label="Sposta giù" onclick="muovi('${e.id}',1)" ${off || ie === na - 1 ? 'disabled' : ''}>${CHD}</button></div>
+    <div class="row"><div><label>Tipo</label><select onchange="ed('${e.id}','tipo',this.value)" ${d}><option value="classica" ${e.tipo === 'classica' ? 'selected' : ''}>Classica</option><option value="10x10" ${e.tipo === '10x10' ? 'selected' : ''}>10x10</option></select></div>
+    <div><label>Obiettivo</label><input value="${esc(e.obiettivo)}" onchange="ed('${e.id}','obiettivo',this.value)" ${d}></div>
+    <div><label>Intervallo (s)</label><input type="number" inputmode="numeric" placeholder="nessuno" value="${e.pausa || (e.tipo === '10x10' ? 120 : '')}" onchange="ed('${e.id}','pausa',+this.value)" ${d}></div></div>
+    <p class="mu" style="margin:6px 0 0">Avviso sonoro: nel 10x10 scatta dopo questo tempo dall’inizio della serie precedente, nelle classiche dopo la fine della serie. Vuoto = nessun avviso.</p>
+    <label>Parole per la voce (separate da virgola)</label><input value="${esc((e.alias || []).join(', '))}" onchange="ed('${e.id}','alias',this.value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean))" ${d}>
+    <div class="row end"><div><label>Scheda</label><select onchange="sposta('${e.id}',this.value)" ${d}>${opts}</select></div>
+    <button onclick="ed('${e.id}','arch',${!e.arch});render()">${off ? 'Ripristina' : 'Archivia'}</button></div></div>`;
+}
+function vModifica() {
+  const att = D.schede.filter(s => !s.arch), tutte = [...att, ...D.schede.filter(s => s.arch)];
+  const cards = tutte.map(s => {
+    const off = !!s.arch, ia = att.indexOf(s);
+    const head = `<div class="card sch ${off ? 'off' : ''}"><div class="row end"><div><label>Nome scheda</label><input value="${esc(s.nome)}" onchange="edS('${s.id}','nome',this.value)" ${off ? 'disabled' : ''}></div>
+      <button class="sq" aria-label="Sposta scheda prima" onclick="muoviS('${s.id}',-1)" ${off || ia === 0 ? 'disabled' : ''}>${CHU}</button>
+      <button class="sq" aria-label="Sposta scheda dopo" onclick="muoviS('${s.id}',1)" ${off || ia === att.length - 1 ? 'disabled' : ''}>${CHD}</button>
+      <button onclick="archS('${s.id}')">${off ? 'Ripristina' : 'Archivia'}</button></div>
+      ${off ? `<p class="mu" style="margin:8px 0 0">${s.es.length} esercizi conservati con il loro storico.</p>` : ''}</div>`;
+    if (off) return head;
+    const na = s.es.filter(e => !e.arch).length, ord = [...s.es.filter(e => !e.arch), ...s.es.filter(e => e.arch)];
+    return head + ord.map((e, i) => cardEs(e, s, i, na, att)).join('') + `<button onclick="nuovo('${s.id}')">+ Aggiungi esercizio a ${esc(s.nome)}</button>`;
+  }).join('');
+  return `<h1>Modifica</h1>${cards}<div style="margin-top:18px"><button onclick="nuovaS()">+ Nuova scheda</button></div><h2>Dati</h2><div class="row"><button onclick="esporta()">Esporta JSON</button><button onclick="$('#imp').click()">Importa JSON</button><button onclick="provaSuono()">Prova suono</button></div><input id="imp" type="file" accept=".json" style="display:none" onchange="importa(this.files[0])">`;
+}
+function ed(id, k, v) { getEs(id)[k] = v; if (k === 'pausa' && D.corrente && D.corrente.esId === id) D.corrente.bip = 0; save(); }
+function edS(id, k, v) { D.schede.find(s => s.id === id)[k] = v; save(); }
+function scambia(arr, att, id, dir) {
+  const i = att.findIndex(x => x.id === id), j = i + dir; if (i < 0 || j < 0 || j >= att.length) return;
+  const a = arr.indexOf(att[i]), b = arr.indexOf(att[j]); [arr[a], arr[b]] = [arr[b], arr[a]]; save(); render();
+}
+function muovi(id, dir) { const s = D.schede.find(x => x.es.some(e => e.id === id)); scambia(s.es, s.es.filter(e => !e.arch), id, dir); }
+function muoviS(id, dir) { scambia(D.schede, D.schede.filter(x => !x.arch), id, dir); }
+function archS(id) { const s = D.schede.find(x => x.id === id); s.arch = !s.arch; if (!D.schede.some(x => x.id === sched && !x.arch)) { const a = D.schede.find(x => !x.arch); if (a) sched = a.id; } save(); render(); }
+function nuovaS() { D.schede.push({id: 's' + Date.now(), nome: 'Nuova scheda', es: []}); save(); render(); }
+function sposta(id, to) { const e = getEs(id); D.schede.forEach(s => s.es = s.es.filter(x => x.id !== id)); D.schede.find(s => s.id === to).es.push(e); save(); render(); }
+function nuovo(sid) { D.schede.find(s => s.id === sid).es.push({id: 'e' + Date.now(), nome: 'Nuovo esercizio', tipo: 'classica', obiettivo: '3 × 10', alias: []}); save(); render(); }
+function esporta() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(D, null, 2)], {type: 'application/json'})); a.download = 'allenamento-' + new Date().toISOString().slice(0, 10) + '.json'; a.click(); }
+function importa(f) { if (!f) return; const r = new FileReader(); r.onload = () => { try { const x = JSON.parse(r.result); if (!x.versione || !x.schede) throw 0; D = migra(x); save(); render(); } catch (e) { alert('File non valido: serve un export di questa app.'); } }; r.readAsText(f); }
+
+/* ---- voce ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, ascolta = false, lock = null;
+const heard = t => $('#heard').textContent = t;
+function comando(t) {
+  t = ' ' + t.toLowerCase().replace(/[.,!?;:]/g, ' ').replace(/\s+/g, ' ') + ' ';
+  heard('“' + t.trim() + '”');
+  const c = D.corrente;
+  if (/ annulla /.test(t)) return undo();
+  if (/(termina|concludi|chiudi) esercizio|esercizio (finito|concluso)/.test(t)) return finish();
+  const pm = /(\d+(?:[.,]\d+)?)\s*(kg|chili|chilogrammi|k)\b/.exec(t) || /peso (\d+(?:[.,]\d+)?)/.exec(t);
+  if (pm && c) { c.peso = pm[1].replace(',', '.'); if (c.inCorso) c.sets[c.sets.length - 1].peso = c.peso; save(); }
+  const rm = /(\d+)\s*(ripetizioni|rip|volte)/.exec(t);
+  if (/ (finit[aoie]|fatt[aoe]|stop) /.test(t)) return endSet(rm ? +rm[1] : null);
+  if (/ (inizio|inizia|inizi|vai|parto|parti|via|comincio) /.test(t)) return startSet();
+  const cand = attive().flatMap(e => (e.alias || []).map(a => [a, e.id])).sort((a, b) => b[0].length - a[0].length);
+  const hit = cand.find(([a]) => t.includes(' ' + a + ' '));
+  if (hit) return openEs(hit[1]);
+  if (pm) render();
+}
+async function toggleVoce() {
+  sblocca();
+  if (!SR) { heard('Riconoscimento vocale non supportato: usa Chrome o Safari.'); return; }
+  if (ascolta) { ascolta = false; rec.stop(); if (lock) lock.release().catch(() => {}); $('#mb').textContent = 'Attiva voce'; heard('Voce spenta'); return; }
+  rec = new SR(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = false;
+  rec.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) comando(ev.results[i][0].transcript); };
+  rec.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { ascolta = false; $('#mb').textContent = 'Attiva voce'; heard('Microfono non consentito: controlla i permessi.'); } };
+  rec.onend = () => { if (ascolta) try { rec.start(); } catch (e) {} };
+  ascolta = true; rec.start(); $('#mb').textContent = 'Voce attiva'; heard('In ascolto…');
+  try { lock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+$('#mb').onclick = toggleVoce;
+document.addEventListener('visibilitychange', async () => { if (ascolta && document.visibilityState === 'visible') { try { lock = await navigator.wakeLock.request('screen'); } catch (e) {} } });
+render();
+</script>
+</body>
+</html>
