@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Allenamento</title>
+<title>My Gym</title>
 <style>
 :root{--bg:#141c24;--sf:#1e2a35;--ln:#2e3d4b;--tx:#eef1f4;--mu:#9aa8b5;--ac:#f2b84b;--ok:#6fcf97;--rd:#e5736b}
 *{box-sizing:border-box}
@@ -97,8 +97,11 @@ function beep() {
   const go = () => { const o = ac.createOscillator(), g = ac.createGain(); o.connect(g); g.connect(ac.destination); o.frequency.value = 880; g.gain.value = .5; o.start(); o.stop(ac.currentTime + .2); };
   if (ac.state === 'running') go(); else ac.resume().then(go).catch(() => {});
 }
-function provaSuono() { [0, 1, 2].forEach(i => setTimeout(beep, i * 1000)); }
-document.addEventListener('pointerdown', sblocca);
+function provaSuono() {
+  sblocca(); [0, 1, 2].forEach(i => setTimeout(beep, i * 1000));
+  setTimeout(() => heard('Audio: ' + (ac ? ac.state : 'non disponibile') + (ascolta ? ' · voce attiva' : ' · voce spenta') + (wl ? ' · schermo tenuto acceso' : '')), 400);
+}
+document.addEventListener('touchend', sblocca, {passive: true});
 document.addEventListener('click', sblocca);
 
 /* ---- logica serie ---- */
@@ -116,7 +119,7 @@ function startSet() {
   const L = c.sets[c.sets.length - 1], n = Date.now();
   if (L) L.pausaDopo = Math.round((n - L.fine) / 1000);
   c.sets.push({inizio: n, fine: null, rip: null, peso: c.peso, pausaDopo: null});
-  c.inCorso = true; c.bip = 0; c.bloccato = true; save(); render();
+  c.inCorso = true; c.bip = 0; c.bloccato = true; save(); render(); schermoAcceso();
 }
 function endSet(rip) {
   const c = D.corrente; if (!c || !c.inCorso) return;
@@ -135,7 +138,7 @@ function finish() {
   const c = D.corrente; if (!c) return;
   const sets = c.sets.filter(s => s.fine);
   if (sets.length) D.log.push({id: 'l' + Date.now(), data: new Date().toISOString(), esId: c.esId, nome: getEs(c.esId).nome, peso: sets[sets.length - 1].peso, sets});
-  D.corrente = null; view = 'home'; save(); render();
+  D.corrente = null; view = 'home'; save(); render(); schermoAcceso();
 }
 
 /* ---- timer ---- */
@@ -254,7 +257,17 @@ function importa(f) { if (!f) return; const r = new FileReader(); r.onload = () 
 
 /* ---- voce ---- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, ascolta = false, lock = null;
+let rec = null, ascolta = false, wl = null;
+/* tiene lo schermo acceso durante un esercizio in corso o con la voce attiva: sul telefono, a schermo spento, i timer si fermano e i bip non partono */
+async function schermoAcceso() {
+  const serve = ascolta || bloccato(D.corrente);
+  try {
+    if (serve && !wl && navigator.wakeLock && document.visibilityState === 'visible') {
+      wl = await navigator.wakeLock.request('screen');
+      wl.addEventListener('release', () => { wl = null; });
+    } else if (!serve && wl) { const x = wl; wl = null; await x.release(); }
+  } catch (e) { wl = null; }
+}
 const heard = t => $('#heard').textContent = t;
 function comando(t) {
   t = ' ' + t.toLowerCase().replace(/[.,!?;:]/g, ' ').replace(/\s+/g, ' ') + ' ';
@@ -272,20 +285,47 @@ function comando(t) {
   if (hit) return openEs(hit[1]);
   if (pm) render();
 }
-async function toggleVoce() {
+/* Su Android Chrome il riconoscimento "continuo" non è affidabile: si ascolta una frase alla volta e si riavvia da soli, con una piccola pausa. */
+const isAndroid = /Android/i.test(navigator.userAgent);
+let ultimo = {t: '', ts: 0}, riavvio = 400, inAscolto = false;
+const ERR_VOCE = {
+  'not-allowed': 'Microfono non consentito: controlla i permessi del sito.',
+  'service-not-allowed': 'Riconoscimento vocale bloccato dal browser o dal sistema.',
+  'audio-capture': 'Microfono non disponibile (forse lo sta usando un’altra app).',
+  'network': 'Il servizio vocale di Chrome non è raggiungibile: serve internet.',
+  'language-not-supported': 'Italiano non supportato dal riconoscimento vocale.'
+};
+function avviaVoce() { if (!ascolta || inAscolto) return; try { rec.start(); } catch (e) { setTimeout(avviaVoce, 1000); } }
+function creaRec() {
+  rec = new SR(); rec.lang = 'it-IT'; rec.continuous = !isAndroid; rec.interimResults = true;
+  rec.onstart = () => { inAscolto = true; };
+  rec.onresult = ev => {
+    riavvio = 400; let parziale = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i], t = r[0].transcript;
+      if (r.isFinal) { const k = t.trim().toLowerCase(), n = Date.now(); if (k && !(k === ultimo.t && n - ultimo.ts < 1500)) { ultimo = {t: k, ts: n}; comando(t); } }
+      else parziale += t;
+    }
+    if (parziale) heard('… ' + parziale.trim());
+  };
+  rec.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { ascolta = false; $('#mb').textContent = 'Attiva voce'; schermoAcceso(); }
+    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') riavvio = 3000;
+    if (ERR_VOCE[ev.error]) heard(ERR_VOCE[ev.error]);
+  };
+  rec.onend = () => { inAscolto = false; if (ascolta) setTimeout(avviaVoce, riavvio); };
+}
+function toggleVoce() {
   sblocca();
   if (!SR) { heard('Riconoscimento vocale non supportato: usa Chrome o Safari.'); return; }
-  if (ascolta) { ascolta = false; rec.stop(); if (lock) lock.release().catch(() => {}); $('#mb').textContent = 'Attiva voce'; heard('Voce spenta'); return; }
-  rec = new SR(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = false;
-  rec.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) comando(ev.results[i][0].transcript); };
-  rec.onerror = ev => { if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { ascolta = false; $('#mb').textContent = 'Attiva voce'; heard('Microfono non consentito: controlla i permessi.'); } };
-  rec.onend = () => { if (ascolta) try { rec.start(); } catch (e) {} };
-  ascolta = true; rec.start(); $('#mb').textContent = 'Voce attiva'; heard('In ascolto…');
-  try { lock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  if (ascolta) { ascolta = false; try { rec.stop(); } catch (e) {} inAscolto = false; schermoAcceso(); $('#mb').textContent = 'Attiva voce'; heard('Voce spenta'); return; }
+  ascolta = true; riavvio = 400; creaRec();
+  try { rec.start(); } catch (e) {}
+  $('#mb').textContent = 'Voce attiva'; heard('In ascolto…'); schermoAcceso();
 }
 $('#mb').onclick = toggleVoce;
-document.addEventListener('visibilitychange', async () => { if (ascolta && document.visibilityState === 'visible') { try { lock = await navigator.wakeLock.request('screen'); } catch (e) {} } });
-render();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { schermoAcceso(); avviaVoce(); } });
+render(); schermoAcceso();
 </script>
 </body>
 </html>
