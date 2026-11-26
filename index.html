@@ -23,9 +23,13 @@ input,select{min-height:42px;background:var(--bg);border:1px solid var(--ln);bor
 .mu{color:var(--mu);font-size:.9rem}
 #tm{font-size:4.2rem;font-variant-numeric:tabular-nums;text-align:center;margin:6px 0 0;font-weight:700}
 #ts{text-align:center;color:var(--mu);margin-bottom:8px}
-.set{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 10px;border-top:1px solid var(--ln);padding:6px 0}
-.set .l{display:flex;align-items:center;gap:6px}.set .r{margin-left:auto}
-.mini{width:3.4rem;padding:4px 6px;text-align:center}.mini.w{width:4.4rem}
+.set{display:grid;grid-template-columns:4.1rem 2.7rem 3.6rem minmax(0,1fr);gap:6px;align-items:center;border-top:1px solid var(--ln);padding:6px 0}
+.set.h{border-top:0;padding:0 0 2px;color:var(--mu);font-size:.78rem}.set.h span:nth-child(2),.set.h span:nth-child(3){text-align:center}
+.set .r{text-align:right;white-space:nowrap;font-size:.9rem;font-variant-numeric:tabular-nums}
+.mini{width:100%;min-width:0;min-height:36px;padding:4px 2px;text-align:center;-moz-appearance:textfield;appearance:textfield}
+.mini::-webkit-inner-spin-button,.mini::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.hd{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.hd button{padding:6px 12px;min-height:38px;font-size:.85rem;flex:0 0 auto}
+.dng{border-color:var(--rd);color:var(--rd);font-weight:700}
 nav{position:fixed;bottom:0;left:0;right:0;background:var(--sf);border-top:1px solid var(--ln);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;border:0;border-radius:0;background:none;padding:14px}nav .on{color:var(--ac)}
 .row.end{align-items:flex-end}.row.end>button{flex:0 0 auto;min-height:42px}
@@ -84,8 +88,13 @@ const attive = () => D.schede.filter(s => !s.arch).flatMap(s => s.es).filter(e =
 const getEs = id => allEs().find(e => e.id === id);
 const fmt = ms => { ms = Math.max(0, Math.round(ms / 1000)); return String(Math.floor(ms / 60)).padStart(2, '0') + ':' + String(ms % 60).padStart(2, '0'); };
 const lastLog = id => D.log.filter(l => l.esId === id).slice(-1)[0];
-const stats = l => { const p = l.sets.map(s => s.pausaDopo).filter(x => x != null); return {avg: p.length ? p.reduce((a, b) => a + b, 0) / p.length : null, min: p.length ? Math.min(...p) : null}; };
-const pesi = l => { const p = l.sets.map(s => s.peso ?? l.peso); return p.every(x => x === p[0]) ? (p[0] || '–') : p.join('/'); };
+const pesi = l => {
+  const p = l.sets.map(s => s.peso ?? l.peso).map(x => (x === '' || x == null) ? '0' : x); /* nessun peso = 0 */
+  if (p.every(x => x === p[0])) return p[0];
+  const n = p.map(Number).filter(x => !isNaN(x));
+  return p.length <= 4 || !n.length ? p.join('/') : Math.min(...n) + '–' + Math.max(...n); /* tante serie: solo l'intervallo, per non andare a capo */
+};
+const ripTxt = l => { const r = l.sets.map(s => s.rip); return r.every(x => x === r[0]) ? `${r.length} serie × ${r[0]} rip` : `${r.length} serie · ${r.join('/')} rip`; };
 const defRip = e => { const m = /×\s*(\d+)/.exec(e.obiettivo || ''); return m ? +m[1] : 10; };
 
 /* ---- audio e schermo ---- */
@@ -172,7 +181,7 @@ setInterval(() => { controllaPausa(); tick(); }, 100);
 function render() {
   const nav = [['home', 'Allenamento'], ['storia', 'Storico'], ['modifica', 'Modifica']];
   $('#nav').innerHTML = nav.map(([v, t]) => `<button data-v="${v}" class="${view === v || (v === 'home' && view === 'ses') ? 'on' : ''}">${t}</button>`).join('');
-  $('#nav').querySelectorAll('button').forEach(b => b.onclick = () => { view = b.dataset.v; render(); });
+  $('#nav').querySelectorAll('button').forEach(b => b.onclick = () => { view = b.dataset.v; delPend = null; render(); });
   $('#app').innerHTML = ({home: vHome, ses: vSes, storia: vStoria, modifica: vModifica})[view]();
   tick();
 }
@@ -184,8 +193,8 @@ function vHome() {
   const cur = D.corrente, lock = bloccato(cur);
   const banner = lock ? `<div class="card live-b"><span class="live"></span><b>${esc(getEs(cur.esId).nome)}</b> in corso · ${cur.sets.filter(x => x.fine).length} serie fatte<br><span class="mu">Gli altri esercizi sono bloccati finché non lo termini.</span><div style="height:8px"></div><button class="p" style="width:100%" onclick="view='ses';render()">Torna all’esercizio</button></div>` : '';
   const list = s.es.filter(e => !e.arch).map(e => {
-    const l = lastLog(e.id), st = l && stats(l), on = lock && cur.esId === e.id, off = lock && !on;
-    const info = l ? `Ultimo: ${l.peso || '–'} kg${st.avg != null ? ' · pausa media ' + fmt(st.avg * 1000) : ''}` : 'Nessun dato';
+    const l = lastLog(e.id), on = lock && cur.esId === e.id, off = lock && !on;
+    const info = l ? `Ultimo: ${pesi(l)} kg · totale ${fmt(durataTot(l))}` : 'Nessun dato';
     return `<button class="es ${on ? 'on' : ''}" onclick="openEs('${e.id}')" ${off ? 'disabled' : ''}><span><b>${esc(e.nome)}</b><br><span class="mu">${esc(e.obiettivo)} · ${info}</span></span><span>${on ? '<span class="live"></span>' : '›'}</span></button>`;
   }).join('');
   return `<h1>Allenamento</h1>${banner}<div class="row tabs" style="margin-bottom:12px">${tabs}</div>${list || '<p class="mu">Nessun esercizio in questa scheda.</p>'}`;
@@ -193,22 +202,30 @@ function vHome() {
 function vSes() {
   const c = D.corrente; if (!c) { view = 'home'; return vHome(); }
   const e = getEs(c.esId), tot = e.tipo === '10x10' ? ' / 10' : '';
-  const sets = c.sets.map((s, i) => `<div class="set"><span class="l"><b>Serie ${i + 1}</b>${s.fine ? `<input class="mini" type="number" inputmode="numeric" aria-label="Ripetizioni serie ${i + 1}" value="${s.rip ?? ''}" onchange="eSet(${i},'rip',this.value)"> rip` : '<span class="mu">in corso</span>'}<input class="mini w" type="number" step="0.5" inputmode="decimal" aria-label="Peso serie ${i + 1}" value="${esc(s.peso)}" onchange="eSet(${i},'peso',this.value)"> kg</span><span class="mu r">${s.fine ? 'durata ' + fmt(s.fine - s.inizio) : ''}${s.pausaDopo != null ? ' · pausa ' + fmt(s.pausaDopo * 1000) : ''}</span></div>`).join('');
+  const sets = c.sets.map((s, i) => `<div class="set"><b>Serie ${i + 1}</b>${s.fine ? `<input class="mini" type="number" inputmode="numeric" aria-label="Ripetizioni serie ${i + 1}" value="${s.rip ?? ''}" onchange="eSet(${i},'rip',this.value)">` : '<span class="mu" style="text-align:center">–</span>'}<input class="mini" type="number" step="0.5" inputmode="decimal" aria-label="Peso serie ${i + 1} in kg" value="${esc(s.peso)}" onchange="eSet(${i},'peso',this.value)"><span class="mu r">${s.fine ? fmt(s.fine - s.inizio) : ''}${s.pausaDopo != null ? ' · ' + fmt(s.pausaDopo * 1000) : ''}</span></div>`).join('');
   return `<h1>${esc(e.nome)}</h1><p class="mu">${esc(e.obiettivo)} · serie fatte: ${c.sets.filter(s => s.fine).length}${tot}</p>
   <div class="row"><div><label class="mu">Peso serie (kg)</label><input type="number" step="0.5" inputmode="decimal" value="${esc(c.peso)}" onchange="setPeso(this.value)"></div>
   <div><label class="mu">Ripetizioni</label><input id="rip" type="number" inputmode="numeric" value="${defRip(e)}"></div></div>
   <div id="tm"></div><div id="ts"></div>
   ${c.inCorso ? '<button class="big p" onclick="endSet()">Serie finita</button>' : '<button class="big p" onclick="startSet()">Inizio serie</button>'}
   <div class="row"><button onclick="undo()">Annulla ultima</button><button onclick="finish()">Termina esercizio</button></div>
-  <h2>Serie di oggi</h2>${sets || '<p class="mu">Ancora nessuna serie.</p>'}`;
+  <h2>Serie di oggi</h2>${sets ? '<div class="set h"><span>Serie</span><span>Rip</span><span>Kg</span><span class="r">Durata · pausa</span></div>' + sets : '<p class="mu">Ancora nessuna serie.</p>'}`;
 }
+const durataTot = l => { const a = l.sets[0], b = l.sets[l.sets.length - 1]; return a && b && b.fine ? b.fine - a.inizio : 0; };
+let delPend = null, delTimer = null;
 function vStoria() {
   const opts = allEs().map(e => `<option value="${e.id}" ${hist === e.id ? 'selected' : ''}>${esc(e.nome)}</option>`).join('');
-  const rows = D.log.filter(l => !hist || l.esId === hist).slice().reverse().slice(0, 40).map(l => {
-    const st = stats(l), d = new Date(l.data).toLocaleDateString('it-IT', {day: 'numeric', month: 'short'});
-    return `<div class="card"><b>${esc((getEs(l.esId) || l).nome)}</b> <span class="mu">${d}</span><br>${pesi(l)} kg · ${l.sets.length} serie · ${l.sets.map(s => s.rip).join('/')} rip<br><span class="mu">Pausa media ${st.avg != null ? fmt(st.avg * 1000) : '–'} · più corta ${st.min != null ? fmt(st.min * 1000) : '–'}</span></div>`;
+  const rows = D.log.map((l, i) => [l, i]).filter(([l]) => !hist || l.esId === hist).reverse().slice(0, 40).map(([l, i]) => {
+    const d = new Date(l.data).toLocaleDateString('it-IT', {day: 'numeric', month: 'short'}), conf = delPend === i;
+    return `<div class="card"><div class="hd"><span><b>${esc((getEs(l.esId) || l).nome)}</b> <span class="mu">${d}</span></span><button class="${conf ? 'dng' : ''}" aria-label="${conf ? 'Conferma eliminazione' : 'Elimina sessione'}" onclick="delLog(${i})">${conf ? 'Conferma' : 'Elimina'}</button></div>${pesi(l)} kg · ${ripTxt(l)}<br><span class="mu">Tempo totale ${fmt(durataTot(l))}</span></div>`;
   }).join('');
-  return `<h1>Storico</h1><select onchange="hist=this.value;render()"><option value="">Tutti gli esercizi</option>${opts}</select><div style="height:10px"></div>${rows || '<p class="mu">Ancora nessun allenamento registrato.</p>'}`;
+  return `<h1>Storico</h1><select onchange="hist=this.value;delPend=null;render()"><option value="">Tutti gli esercizi</option>${opts}</select><div style="height:10px"></div>${rows || '<p class="mu">Ancora nessun allenamento registrato.</p>'}`;
+}
+/* due tocchi: Elimina, poi Conferma entro 4 secondi (nessun confirm() del browser, che in alcuni contesti è bloccato) */
+function delLog(i) {
+  clearTimeout(delTimer);
+  if (delPend === i) { D.log.splice(i, 1); delPend = null; save(); render(); return; }
+  delPend = i; delTimer = setTimeout(() => { delPend = null; if (view === 'storia') render(); }, 4000); render();
 }
 function cardEs(e, s, ie, na, att) {
   const off = !!e.arch, d = off ? 'disabled' : '';
