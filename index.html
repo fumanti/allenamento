@@ -302,9 +302,8 @@ function comando(t) {
   if (hit) return openEs(hit[1]);
   if (pm) render();
 }
-/* Su Android Chrome il riconoscimento "continuo" non è affidabile: si ascolta una frase alla volta e si riavvia da soli, con una piccola pausa. */
-const isAndroid = /Android/i.test(navigator.userAgent);
-let ultimo = {t: '', ts: 0}, riavvio = 400, inAscolto = false;
+/* Ascolto continuo ovunque. Se il browser chiude la sessione (silenzio lungo), si riavvia da solo con una piccola pausa. */
+let ultimo = {t: '', ts: 0}, riavvio = 400, inAscolto = false, visti = 0;
 const ERR_VOCE = {
   'not-allowed': 'Microfono non consentito: controlla i permessi del sito.',
   'service-not-allowed': 'Riconoscimento vocale bloccato dal browser o dal sistema.',
@@ -314,13 +313,14 @@ const ERR_VOCE = {
 };
 function avviaVoce() { if (!ascolta || inAscolto) return; try { rec.start(); } catch (e) { setTimeout(avviaVoce, 1000); } }
 function creaRec() {
-  rec = new SR(); rec.lang = 'it-IT'; rec.continuous = !isAndroid; rec.interimResults = true;
-  rec.onstart = () => { inAscolto = true; };
+  rec = new SR(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = true;
+  rec.onstart = () => { inAscolto = true; visti = 0; };
   rec.onresult = ev => {
     riavvio = 400; let parziale = '';
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      if (i < visti) continue; /* Android a volte rimanda anche i risultati già letti */
       const r = ev.results[i], t = r[0].transcript;
-      if (r.isFinal) { const k = t.trim().toLowerCase(), n = Date.now(); if (k && !(k === ultimo.t && n - ultimo.ts < 1500)) { ultimo = {t: k, ts: n}; comando(t); } }
+      if (r.isFinal) { visti = i + 1; const k = t.trim().toLowerCase(), n = Date.now(); if (k && !(k === ultimo.t && n - ultimo.ts < 1500)) { ultimo = {t: k, ts: n}; comando(t); } }
       else parziale += t;
     }
     if (parziale) heard('… ' + parziale.trim());
